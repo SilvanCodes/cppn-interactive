@@ -2,7 +2,7 @@ mod utils;
 
 use favannat::{
     matrix::{evaluator::MatrixEvaluator, fabricator::FeedForwardMatrixFabricator},
-    network::{Evaluator, Fabricator, StatefulEvaluator, StatefulFabricator},
+    network::{Evaluator, Fabricator},
 };
 use ndarray::arr1;
 use set_genome::{
@@ -16,52 +16,67 @@ use wasm_bindgen::prelude::*;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-// #[wasm_bindgen]
-// pub struct RGBA {
-//     red: u8,
-//     green: u8,
-//     blue: u8,
-//     alpha: u8,
-// }
-
 #[wasm_bindgen]
-pub struct RGB {
-    red: usize,
-    green: usize,
-    blue: usize,
+pub struct Individual {
+    genome: Genome,
+    evaluator: MatrixEvaluator,
+    result_buffer: Vec<u8>,
+}
+
+impl Individual {
+    pub fn new(genome: Genome) -> Self {
+        Self {
+            evaluator: FeedForwardMatrixFabricator::fabricate(&genome).unwrap(),
+            result_buffer: Vec::new(),
+            genome,
+        }
+    }
 }
 
 #[wasm_bindgen]
-impl RGB {
-    pub fn red(&self) -> usize {
-        self.red
-    }
-    pub fn green(&self) -> usize {
-        self.green
-    }
-    pub fn blue(&self) -> usize {
-        self.blue
+impl Individual {
+    pub fn probe_complete(&mut self, size: f64, resolution: f64) -> *const u8 {
+        self.result_buffer.clear();
+
+        let step = size / resolution;
+
+        let start = (resolution as f64 / -2.0) as isize;
+        let end = (resolution as f64 / 2.0) as isize;
+
+        for x in start..end {
+            for y in start..end {
+                let output = self
+                    .evaluator
+                    .evaluate(arr1(&[step * x as f64, step * y as f64]));
+
+                self.result_buffer.push((255.0 * output[[0]]) as u8);
+                self.result_buffer.push((255.0 * output[[1]]) as u8);
+                self.result_buffer.push((255.0 * output[[2]]) as u8);
+                // self.result_buffer.push((255.0 * output[[3]]) as u8);
+                self.result_buffer.push(255);
+            }
+        }
+        self.result_buffer.as_ptr()
     }
 }
 
 #[wasm_bindgen]
 pub struct Population {
-    individuals: Vec<Genome>,
+    individuals: Vec<Individual>,
     context: GenomeContext,
-    functions: Vec<MatrixEvaluator>,
-    result_buffer: Vec<u8>,
 }
 
 #[wasm_bindgen]
 impl Population {
-    pub fn new(size: usize) -> Self {
+    pub fn new(size: usize, seed: usize) -> Self {
         let parameters = Parameters {
+            seed: Some(seed as u64),
             structure: Structure {
                 inputs: 2,
                 inputs_connected_percent: 0.5,
-                outputs: 4,
+                outputs: 3,
                 outputs_activation: Activation::Sigmoid,
-                weight_std_dev: 0.1,
+                weight_std_dev: 0.25,
                 weight_cap: 1.0,
             },
             mutations: vec![
@@ -105,8 +120,7 @@ impl Population {
                 Mutations::AddConnection { chance: 0.5 },
                 Mutations::RemoveConnection { chance: 0.25 },
                 // Mutations::AddRecurrentConnection { chance: 0.01 },
-            ],
-            ..Default::default()
+            ], // ..Default::default()
         };
         let mut context = GenomeContext::new(parameters);
 
@@ -117,26 +131,18 @@ impl Population {
             for _ in 0..size {
                 genome.mutate_with_context(&mut context);
             }
-            individuals.push(genome)
-        }
-
-        let mut functions = Vec::with_capacity(size);
-
-        for genome in &individuals {
-            functions.push(FeedForwardMatrixFabricator::fabricate(genome).unwrap());
+            individuals.push(Individual::new(genome))
         }
 
         Self {
             individuals,
             context,
-            functions,
-            result_buffer: vec![],
         }
     }
 
     pub fn next_generation(&mut self, index_parent_0: usize, index_parent_1: usize) {
-        let parent_0 = self.individuals[index_parent_0].clone();
-        let parent_1 = self.individuals[index_parent_1].clone();
+        let parent_0 = self.individuals[index_parent_0].genome.clone();
+        let parent_1 = self.individuals[index_parent_1].genome.clone();
         let size = self.individuals.len();
 
         self.individuals.clear();
@@ -150,54 +156,16 @@ impl Population {
 
             offspring.mutate_with_context(&mut self.context);
 
-            self.individuals.push(offspring)
-        }
-
-        self.functions.clear();
-
-        for genome in &self.individuals {
-            self.functions
-                .push(FeedForwardMatrixFabricator::fabricate(genome).unwrap());
-        }
-    }
-
-    pub fn probe_individual(&mut self, individual_index: usize, input_x: f64, input_y: f64) -> RGB {
-        let output = self.functions[individual_index].evaluate(arr1(&[input_x, input_y]));
-
-        RGB {
-            red: (255.0 * output[[0]]) as usize,
-            green: (255.0 * output[[1]]) as usize,
-            blue: (255.0 * output[[2]]) as usize,
+            self.individuals.push(Individual::new(offspring))
         }
     }
 
     pub fn probe_individual_complete(
         &mut self,
-        individual_index: usize,
-        dimension_x: f64,
-        dimension_y: f64,
-        resolution: usize,
+        index: usize,
+        size: f64,
+        resolution: f64,
     ) -> *const u8 {
-        self.result_buffer.clear();
-
-        let step_x = dimension_x / resolution as f64;
-        let step_y = dimension_y / resolution as f64;
-
-        let start = (resolution as f64 / -2.0) as isize;
-        let end = (resolution as f64 / 2.0) as isize;
-
-        for x in start..end {
-            for y in start..end {
-                let output = self.functions[individual_index]
-                    .evaluate(arr1(&[step_x * x as f64, step_y * y as f64]));
-
-                self.result_buffer.push((255.0 * output[[0]]) as u8);
-                self.result_buffer.push((255.0 * output[[1]]) as u8);
-                self.result_buffer.push((255.0 * output[[2]]) as u8);
-                self.result_buffer.push((255.0 * output[[3]]) as u8);
-            }
-        }
-
-        self.result_buffer.as_ptr()
+        self.individuals[index].probe_complete(size, resolution)
     }
 }

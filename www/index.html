@@ -4,12 +4,48 @@
 <head>
   <meta charset="utf-8">
   <title>Hello wasm-pack!</title>
+  <link rel="stylesheet" type="text/css" href="https://www.silvan.codes/elc/el.css">
+  <script defer src="./bootstrap.js"></script>
 </head>
 
-<body>
-  <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
-  <div id="canvas-wrapper"></div>
-  <script src="./bootstrap.js"></script>
+<style>
+  body {
+    background-color: gray;
+  }
+</style>
+
+<body class="el-cover">
+  <div>
+    <h1>Click any two images to produce the next generation.</h1>
+
+    <noscript>This page contains webassembly and javascript content, please enable javascript in your
+      browser.</noscript>
+  </div>
+
+  <div class="el-cluster" style="overflow: visible;">
+    <div id="canvas-wrapper"></div>
+  </div>
+
+  <div>
+
+
+    <label for="size">SIZE:</label>
+    <input type="number" id="size">
+
+    <label for="resolution">RESOLUTION:</label>
+    <input type="number" id="resolution">
+
+    <label for="seed">SEED:</label>
+    <input type="number" id="seed">
+
+    <label for="populationSize">POPULATION_SIZE:</label>
+    <input type="number" id="populationSize">
+
+    <button id="autoGenerations">Jump 10 generations</button>
+
+  </div>
+
+
 </body>
 
 </html>
